@@ -1,0 +1,2 @@
+ - CCured (dynamic memory safety checks): older, but consdiers the idea of dynamically checking memory operations via instrumentation.
+ - SoftBound: Related to spatial memory safety, but still possibly useful.

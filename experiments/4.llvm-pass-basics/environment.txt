@@ -1,0 +1,13 @@
+Linux sputnik-desktop 7.1.6-201.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Tue Aug  4 00:23:39 UTC 2026 x86_64 GNU/Linux
+
+Architecture:
+x86_64
+
+glibc:
+ldd (GNU libc) 2.43
+
+GCC:
+gcc (GCC) 16.1.1 20260515 (Red Hat 16.1.1-2)
+
+Clang:
+clang version 22.1.8 (Fedora 22.1.8-4.fc44)

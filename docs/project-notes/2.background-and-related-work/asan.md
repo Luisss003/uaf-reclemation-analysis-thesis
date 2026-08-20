@@ -1,4 +1,4 @@
-## AddressSanitizer
+# AddressSanitizer
 ### Existing Techniques and their Limitations
 #### Shadow Memory
  - SM is a method to store metadata about real program data i.e. stack, heap, etc.
