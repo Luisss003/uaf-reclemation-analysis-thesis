@@ -6,7 +6,7 @@ To what extent can a glibc aware runtime analysis characterize observed heap
 reclamation and its consequences following use-after-free?
 
 ## Secondary Research Questions
-
+ 
 ### RQ1: What runtime evidence is required at a minimum to classify an observed UAF execution?
 
 #### General Idea
@@ -27,9 +27,8 @@ In order to classify a UAF execution, we will use the following dimensions:
 3. TBD
 
 #### Ground Truth
-For a ground truth, we will have to manually construct a test program where we
-can manually classify the UAF executed, and then test the result of the
-algorithm.
+We define objectively correct ground truths about classification to see if some level of observation is better/worse than the other:
+1. Allocator Generation: 
 
 #### Reported Result
 We should recieve a tuple of dimensions which we deem at a minimum are required
