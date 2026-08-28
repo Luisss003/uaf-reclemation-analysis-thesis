@@ -7,54 +7,58 @@ reclamation and its consequences following use-after-free?
 
 ## Secondary Research Questions
  
-### RQ1: What runtime evidence is required at a minimum to classify an observed UAF execution?
+### RQ1: How does increasing runtime observation detail affect the correctness and completeness of stale access classification in known UAF execution?
 
 #### General Idea
-Because we are able to measure/observe at different levels, what are the minimum components we should be observing/tracking while keeping our classification of the type of UAF performed accurate? We want minimum because the more we track, the heavier the framework becomes. 
+We understand that the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that. What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly?
 
 #### Required Observations
-All heap/allocator events, generations, reuses, etc that can be measured during
-a programs execution.
+We will require the observations for each specified level we define in `Measurement`. This is because each level observes more than the last one.
 
 #### Measurement
-For each level, which is TBD, of required observations, we will compute a
-classification of a UAF execution. For each level, the number of components
-measured increases.
+First, we must define our output fields for the classifier. This is simply one specific fact our tool claims about one observed UAF execution:
+1. `stale_pointer_generation`: the generation the dangling pointer was derived from
+2. `stale_access_op`: was the dangling ptr used for a read or write?
+3. `stale_access_range`: what bytes did the stale access touch?
+4. `expired_object`: the object that no longer is alive, but the dangling pointer still points to
+5. `expired_object_range`: the address space on heap that original object used
+6. `owner_at_access_map`: at time of stale access, a set list for who owned the byte range accessed (since recall acceses can leak into unallocated/unowned bytes).
+7. `reclamation_state`: we can derive this from `owner_at_access`; either `unreclaimed`, `reclaimed`, or `partially_reclaimed`.
+8. `replacement_obj`: if reclamation of an addr occured, what object replaced it?
 
-In order to classify a UAF execution, we will use the following dimensions:
-1. Reclaimed/Unreclaimed
-2. Operation (write or read)
-3. TBD
+For these 8 output fields, we need evidence to support the claim made by the classifier. These are the types of evidence:
+1. (AE) Allocator Events: whatever we can gague for calls to `malloc`, `free`, `calloc`, etc.
+2. (MAE) Memory Access Events: These are the actual isntructions that work with memory i.e. `x = *p`, `p->field = v`, `memcpy(dst, src, n)`
+3. (PP) Pointer Provenance: where a pointer a came from and how it moved
+4. We can generate two pieces of additional evidence from the main 3:
+    1. (TO) Temporal Ordering: this is simply the order at which "events" occured
+    2. (RO) Range/Overlaps: the potential overlaps in allocations, and whether the stale access range overlap an expired objs old range.
+
+For our different types of evidence, here are the output fields that rely on them:
+1. `stale_pointer_generation`: AE, PP, MAE
+2. `stale_access_op`: MAE
+3. `stale_access_range`: MAE
+4. `expired_object`: AE, PP, TO
+5. `expired_object_range`: AE, PP
+6. `owner_at_access_map`: AE, TO, MAE, RO
+7. `reclamation_state`: AE, TO, PP, MAE, RO
+8. `replacement_obj`: AE, TO, PP, MAE, RO
+
+Now, we need to define the levels of observation we want to work with:
+1. Level A: Allocator Events Only
+    1. We begin with AE's first because fundementally, we need to know at a minimum about allocation generations. That is the purpose of this paper.
+2. Level B: Allocator Events + Memory Access Events, which has byproduct of Temporal Ordering and Range/Overlaps
+    1. We add MAE next because allocator events are the best natural progression. They can tell us of a UAF's existence, but not much else. This gap is filled at the next level
+3. Level C: AE + MAE + PP + Byproducts
+    1. Finally, we can understand how each generation and address range changed, and interacted with each other 
 
 #### Ground Truth
-We define objectively correct ground truths about classification to see if some level of observation is better/worse than the other:
-1. Allocator Generation: 
+We will have X manually constructed synthetic cases where we know the true allocation, free, reuse, stale pointer, access range, and operation. From there, we can simply compare the output of each level of observation with the ground truth.
 
 #### Reported Result
-We should recieve a tuple of dimensions which we deem at a minimum are required
-to classify a UAF with certainty 100% of the time.
+For our three levels, we must mark `known`, `unknown`, `wrong` for the 8 fields they output. From here, we need to analyze and write down what each previous level was missing, and why it led to a unknown or wrong output.
 
-### RQ2: Can allocation generation tracking and pointer provenance tracking correctly associate a stale access with the the participating objects and/or generations?
-
-#### General Idea
-With all the measurements we plan to keep, which in a raw state, seem to be unrelated, can we say for certain that some pointer is associated with this generation of objects, what objects it can reach, etc. Generally, with our measurements, can we really create a "story".
-
-#### Required Observations
-Pointer origin, allcoation generation IDs, free events, reuse events, access address/range.
-
-#### Measurement
-Compare the generations identified by the analysis with the
-known participating generations and objects.
-
-#### Ground truth
-manually constructed or otherwise known allocation/free/reuse
-relationships for the test case
-
-#### Reported result
-Proportion of stale accesses assocaited with correct
-generations
-
-### RQ3: What conditions determine whether attacker derived data in a replacement allocation influences a subsequent stale access?
+### RQ2: What conditions determine whether attacker derived data in a replacement allocation influences a subsequent stale access?
 
 #### General Idea
 When does attacker supplied data placed into the replacement object actually become relevant to the later UAF? Like for example, say we have the sequence: 
