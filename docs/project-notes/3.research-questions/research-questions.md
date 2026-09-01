@@ -58,58 +58,115 @@ We will have X manually constructed synthetic cases where we know the true alloc
 #### Reported Result
 For our three levels, we must mark `known`, `unknown`, `wrong` for the 8 fields they output. From here, we need to analyze and write down what each previous level was missing, and why it led to a unknown or wrong output.
 
-### RQ2: What conditions determine whether attacker derived data in a replacement allocation influences a subsequent stale access?
+### RQ2: When a stale read targets reclaimed heap memory, how much of the stale read range overlaps the STDIN derived data in the replacement object?
 
 #### General Idea
-When does attacker supplied data placed into the replacement object actually become relevant to the later UAF? Like for example, say we have the sequence: 
-```
-malloc(A)
-free(A)
-malloc(B) reuses A's memory
-
-attacker data enters B
-
-stale pointer to A is used by the program for whatever reason
-```
-For attacker supplied data to actually influence the stale access, or "be useful" there have to be some assumed conditions. Thats the objective of this RQ, but some general ones would be:
-1. The memory must be reclaimed (the replacement alloc B needs to reuse at least part of A's old address range)
-2. Attacker derived bytes actually have to align with B's structure in a useful manner; otherwise it could work with corrupted data, which just leads to a non exploitable state (recall weird machines)
-3. The stale access actually has to overlap with where we put the attacker bytes. If the attacker bytes are at ranges [23-30], but the read only goes to [20-22], then the attacker doesnt gain anything.
+First, let's define attacker derived data as coming strictly through STDIN. So, lets say a stale read occured. Now how much of the attacker derived bytes were actually touched through that read? And for partial and full touches of those bytes, what are some possible reasons why some failed/partially failed/succeded? We don't care about how those read bytes later influence exploitation, just the access itself.
  
 #### Required Observations
-access address/range, original bytes at reuse location, attacker derived bytes at reuse location, object generations, structures (if applicable) to old and new objects at range
+Stale read range and replacement object range, and STDIN derived byte ranges inside the replacement object.
 
 #### Measurements
-Because there are different classifications of UAF, for each one, we will need to observe the state the heap is in + its relationships just before a successful, or failing UAF exploit occurs. Then, we can just note down what states/conditions were required for this specific test run.
+For one stale read to a replacement object, we need 3 ranges:
+1. `stale_access_range`: the range at which the stale access touched
+2. `replacement_object_range`: the range the replacement heap object takes up
+3. `stdin_derived_ranges_in_replacement`: the range within the object of the attacker's STDIN bytes
+
+ Given this, we can simply compute X as $(\text{stale\_access\_range} \cap \text{stdin\_derived\_ranges\_in\_replacement})$ and reports bytes/ratio.
+
+ We except there to be 3 possible outcomes:
+ 1. `full_read`: all STDIN derived bytes were accessed
+ 2. `partial`: only some of the STDIN derived bytes were accessed
+ 3. `miss`: none of the STDIN derived bytes were accessed
+
+Each of these can be easily proven via a simple intervals algorithm.
+
+Now when it comes to conditions that lean torwards why a UAF execution ended up in a certain case, 
 
 #### Ground truth
-The GT would simply be the answer to our original question: did the attacker derived bytes in the replacement allocation actually even influence the stale access, and if so, which bytes?
+The GT would be synthetic test cases where we know:
+1. Stale read range
+2. Replacement Object range
+3. STDIN bytes range
+4. Which gives us whether the stale read was full, partial, or missed the STDIN bytes completely.
+
+Along with this, reasons why the stale read did, didn't, or only partially read those bytes:
+TBD
 
 #### Reported Result
-List of conditions/measurements that were most commonly required for a successful influential attack.
+For each test case, we report whether the stale read accessed attacker derived data. Then we aggregate these results, and measure how often a stale read accessed STDIN data as well as the simple conditions that seemingly led to a successful read of attacker derived data.
 
-### RQ4: What concrete runtime consequence follows from stale accesses to reclaimed memory?
+### RQ3: What observable runtime effects follow from stale reads or writes to reclaimed memory?
 
 #### General Idea
-So we've measured different components at runtime, such as the type of UAF performed, reuse of chunks, etc, but now what actually happened because of that use? This is where we would classify that the outcome of of a sequence of events and measurements is X.
+So we've measured different components at runtime, such as the type of UAF performed, reuse of chunks, etc, but now, we want to quantify the effects of the stale access.:
+1. For reads, the analysis records whether bytes from the replacement object were loaded and whether the loaded value is later observed being used.
+2. For writes, the analysis records whether bytes belonging to the replacement object were modified and whether those modified bytes are later observed being used. The goals arent proving exploitability or program semantics, but rather just making concrete program observations after the fact.
 
 #### Required Observations
-access address/rage, overall program state after
-the access i.e. condition flags in the program, addresses/values stored.
+We will require the results of RQ1 + need to observe some new behavior here including bytes loaded in by a stale read, track what loaded bytes came from the replacement object, whether the loaded value is later used, bytes wirtten through a stale pointer, what replacement bytes were overwritten, the ranges of the ovewrite, and what modified bytes were later read/or used.
 
 #### Measurements
-We need to classify potential outcomes (since there can be more than one). We can support ones, but not limited to:
-1. Incorrect value propogation
-2. Pointer corruption -> Use
-5. Information disclosure
+For each stale access, we want to measure the following:
+1. `stale_op`
+2. `access_range`
+3. `curr_owner`
+4. `immediate_effect`
+5. `later_use`
+
+The key things are `immediate_effect` and `later_use`. These two will vary between a stale read and write.
+
+First, we need to define what an `immediate_effect` is:
+1. Stale Reads
+    1. We can define a `stale read effect` as simply reading bytes from a replacement object. The effect itself is those bytes being stored somewhere possibly important
+    2. We keep track of the replacement object, and for any reads to it, we track what range of the object was read
+    3. We can measure this as $\text{stale\_read\_range} \cap \text{replacement\_object\_range}$
+2. Stale Writes
+    1. keep track of the range within the replacement object that is overwritten
+    2. We can define a stale write effect as simply writing bytes to a replacement object via the stale pointer, so we should measure:
+    3. We can measure this as $\text{stale\_write\_range} \cap \text{replacement\_object\_range}$
+
+So, we can track the following metrics:
+1. read_replacement_overlap_range
+2. read_replacement_overlap_bytes
+3. read_replacement_overlap_ratio
+OR for writes:
+4. write_replacement_overlap_range
+5. write_replacement_overlap_bytes
+6. write_replacement_overlap_ratio
+
+And that's really it for `immediate_effect`; simply some attacker derived bytes were read from a replacement allocation, or were written to it. The more complex part is tracking `later_use`.
+
+Now we need to define what `later_use` is. For both read/write,  we can define it as simply the first observed instruction that consumed the affected value or byte range:
+1. Reads: did the value loaded by the stale read get later used?
+2. Writes: did the replacement bytes overwritten by the stale write later get read or used?
+
+The operations we can keep track of are:
+1. `unused`
+2. `used_in_branch`
+3. `used_as_mem_addr`
+4. `used_as_write_val`
+5. `used_as_size_or_index`
+6. `used_as_output_data`
+7. `used_as_free_arg`
+8. `used_as_indirect_call_trgt`
+9. `crash_after_tracked_use`: possibly UAF led to unusable weird machine state
+10. `unknown`: if there is not enough data (given the level of observabiltiy) to track the usage
+
+We follow these events until an eventual crash, or program end.
 
 #### Ground truth
-Our GT would simply be test cases where we know the outcome of a UAF triggering input. Like, the objective of the input was to overwrite a pointer in memory, therefore for this test case in particular, any classification other than pointer corruption -> use would be wrong.
+This would be a synthetic case where we know:
+1. Stale Op
+2. Stale access range
+3. Replacement obj range
+4. expected replacement overlap range
+5. expected first later use categy, if one exists.
 
 #### Reported Result
-The RR would be a number of cases classified correctly.
+For each test case, we report the immediate effect of a stale access, as well as the first observable usge of this effect. We then compare the results to our ground truth to determine the accuracy.
 
-### RQ5: How repeatable are observed results and classifications?
+### RQ4: How repeatable are observed results and classifications?
 
 #### General Idea
 Simply, for whatever our framework outputs for program A, input B, glibc version C, and level of observation D, do we get the same results if we run the test N times? 
@@ -136,15 +193,15 @@ After having ran program X under configuration Z 30 times, the classification wa
 True or False for whether a specific observed
 result/classification can be reliably recreated.
 
-### RQ6: How do selected glibc versions affect results and classifications?
+### RQ5: How do selected glibc versions affect results and classifications?
 
 #### General Idea
-Our two selected versions (2.31 and 2.41) both contain mature versions of the glibc allocator + the important tcache mechanism. However, 2.31 contains the version before the implementation of safe linking, which is an important safety mechanism for preventing simple overwriting of the vulnerable `next` pointer for each chunk. 2.41 acts as a modern baseline which is much stronger than 2.31, so the idea is to check how both versions, with their differing levels of security checking, modify the results and classifications our algorithm makes.
+Given the same program, input, analysis, but with two versions of glibc, what changed in the observed UAF execution? We'll use the fields from RQ1-3 to compare. If there are differences, we can't consider them incorrect because simply, the heap layout will differ between versions.
 
 #### Required Observations
-Classification results + measurements with the same test cases and algorithm across both glibc versions used. 
+The output results from RQ1-3, but ran on different glibc versions.
 
-Addiitonally, we need to observe changes in the allocator behavior itself, which I go into more detail in RQ7 (i wrote RQ7 before this one, which is why this RQ refers a future one)
+Addiitonally, we need to observe changes in the allocator behavior itself.
 
 #### Measurements
 This will be a table containing each result + classification between both versions of glibc on the same test program, highlighting whereever differences occur.
@@ -152,25 +209,31 @@ This will be a table containing each result + classification between both versio
 Additionally, we will highlight the unique behaviors of both versions, and mark whether that key behavior did or did not effect the results.
 
 #### Ground Truth
-There must be a simple test program that has known results  + classification to determine in what ways each version causes a differing result/classification. There really isn't a "bad" result in this case, since we cannot expect two different versions of an allocator to behave the same way.
+A ground truth can't really exists until we compare the results. For each field that was different, we will have to examine the most likely reason why certain fields were different between versions. We can then simply look at the unique allocator behavior in the glibc versions that caused the differences, and write those as our ground truth.
 
 #### Expected Result
 Based on what is differing for both tests, the expected result will be an analysis as to why a feature of version X caused measurement Y or classification Z to be incorrect.
 
-### RQ7: How much does each analysis component alter the heap behavior being measured
+### RQ6: How much does each analysis component alter the heap behavior being measured
 
 #### General Idea
-We are intererested in determining in what ways the heap itself is changed through our observation mechanisms. This isn't related to the algorithm/classifications/relationships itself, but rather things like what bins become used (tcache,fastbin,etc), how arena behavior is changed, and possible benchmarks, since a key measurement is the effect frameworks like ours have on runtime/memory consumption.
+We are intererested in determining in what ways the heap itself is changed through our observation mechanisms. Because we have 3 levels of observation, each one will require a different technology i.e. LD_PRELOAD, LLVM instrumentation, etc. So, for each of those levels, using no instrumentation as a baseline, what concrete observations can we make that end up altering natural heap behavior?
 
 #### Required Observations
 alloc/free/reuse events and layout of the heap itself (could be obtained via GDB)
 
 #### Measurements
-For a program X, we can declare "key points" such as calls to `malloc` or `free` and then measure the allocator behavior. This behavior includes, but is not limited to:
-1. What is the true size of the allocation?
-2. Upon being free'd what bin did the chunk end up in?
-3. Upon a next allocation, will we get a reused or fresh chunk? if reused, from what bin.
-4. Are additional arenas created?
+We only want to measure relevant behaviors to our analysis. So this includes things like:
+1. Allocation count before stale access (perhaps reuse will happen more aggressively)
+2. Free order
+3. whether the freed object is reused
+4. which allocation replaces it (generation)
+5. Replacement range/size
+6. owner_at_access_map
+7. tcache/bin destination, if observable
+8. program abort/crash before stale access
+
+We will measure these for each level of observation, using the modern baseline glibc version, since this question is more about a general purturbance.
 
 #### Ground Truth
 The program's natural, repeatable heap behavior upon executing the UAF input without any analysis components. This would have to be gathered manually via GDB.
