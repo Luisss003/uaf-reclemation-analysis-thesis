@@ -10,7 +10,7 @@ reclamation and its consequences following use-after-free?
 ### RQ1: How does increasing runtime observation detail affect the correctness and completeness of stale access classification in known UAF execution?
 
 #### General Idea
-We understand that the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that. What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly?
+We understand that the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that. What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly? We want to be able to identify what claims are 
 
 #### Required Observations
 We will require the observations for each specified level we define in `Measurement`. This is because each level observes more than the last one.
@@ -96,7 +96,8 @@ TBD
 #### Reported Result
 For each test case, we report whether the stale read accessed attacker derived data. Then we aggregate these results, and measure how often a stale read accessed STDIN data as well as the simple conditions that seemingly led to a successful read of attacker derived data.
 
-### RQ3: What observable runtime effects follow from stale reads or writes to reclaimed memory?
+### STRETCH RQ: What observable runtime effects follow from stale reads or writes to reclaimed memory?
+Since this is much more complex, we deal with it as a stretch goal.
 
 #### General Idea
 So we've measured different components at runtime, such as the type of UAF performed, reuse of chunks, etc, but now, we want to quantify the effects of the stale access.:
@@ -166,79 +167,4 @@ This would be a synthetic case where we know:
 #### Reported Result
 For each test case, we report the immediate effect of a stale access, as well as the first observable usge of this effect. We then compare the results to our ground truth to determine the accuracy.
 
-### RQ4: How repeatable are observed results and classifications?
 
-#### General Idea
-Simply, for whatever our framework outputs for program A, input B, glibc version C, and level of observation D, do we get the same results if we run the test N times? 
-
-#### Required Observations
-Results of classification and analysis algorithm after N runs of the program. Additionally, the variables we control such as program, input, glibc version, and the level of observation used.
-
-#### Measurements
-Compare the results of the N runs to determine how
-repeatable the same result is under the same conditions.
-
-Defined as $\frac{\text{\# of same results}}{N}$ for each result/classification
-
-#### Ground Truth
-We define a threshold for whether certain results can be
-repeated with certainty for the result of the definition above. 
-
-While not defined now, an example could be: 
-```
-After having ran program X under configuration Z 30 times, the classification was "PWN" 25 times, meaning its repeatable ~83% of the time, we cannot confidently say that the results of this environment is reproducible because it is under our threshhold of ≤ 98%
-```
-
-#### Reported Result
-True or False for whether a specific observed
-result/classification can be reliably recreated.
-
-### RQ5: How do selected glibc versions affect results and classifications?
-
-#### General Idea
-Given the same program, input, analysis, but with two versions of glibc, what changed in the observed UAF execution? We'll use the fields from RQ1-3 to compare. If there are differences, we can't consider them incorrect because simply, the heap layout will differ between versions.
-
-#### Required Observations
-The output results from RQ1-3, but ran on different glibc versions.
-
-Addiitonally, we need to observe changes in the allocator behavior itself.
-
-#### Measurements
-This will be a table containing each result + classification between both versions of glibc on the same test program, highlighting whereever differences occur.
-
-Additionally, we will highlight the unique behaviors of both versions, and mark whether that key behavior did or did not effect the results.
-
-#### Ground Truth
-A ground truth can't really exists until we compare the results. For each field that was different, we will have to examine the most likely reason why certain fields were different between versions. We can then simply look at the unique allocator behavior in the glibc versions that caused the differences, and write those as our ground truth.
-
-#### Expected Result
-Based on what is differing for both tests, the expected result will be an analysis as to why a feature of version X caused measurement Y or classification Z to be incorrect.
-
-### RQ6: How much does each analysis component alter the heap behavior being measured
-
-#### General Idea
-We are intererested in determining in what ways the heap itself is changed through our observation mechanisms. Because we have 3 levels of observation, each one will require a different technology i.e. LD_PRELOAD, LLVM instrumentation, etc. So, for each of those levels, using no instrumentation as a baseline, what concrete observations can we make that end up altering natural heap behavior?
-
-#### Required Observations
-alloc/free/reuse events and layout of the heap itself (could be obtained via GDB)
-
-#### Measurements
-We only want to measure relevant behaviors to our analysis. So this includes things like:
-1. Allocation count before stale access (perhaps reuse will happen more aggressively)
-2. Free order
-3. whether the freed object is reused
-4. which allocation replaces it (generation)
-5. Replacement range/size
-6. owner_at_access_map
-7. tcache/bin destination, if observable
-8. program abort/crash before stale access
-
-We will measure these for each level of observation, using the modern baseline glibc version, since this question is more about a general purturbance.
-
-#### Ground Truth
-The program's natural, repeatable heap behavior upon executing the UAF input without any analysis components. This would have to be gathered manually via GDB.
-
-#### Expected Result
-This should be an explanation/analysis as to how each different level of observation modifies the way the heap operates.
-
-For example, if for each store operation, we instrument with a call to a heap modifying function like `printf`, doing this causes tcache to be prefilled with unrelated chunks, that wouldn't have been there in a clean run.

@@ -5,21 +5,30 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-int flag = 0;
-
 enum state {
-  UNALLOCATED, ALLOCATED, FREE  
+  UNALLOCATED, ALLOCATED, FREE 
 };
 
-struct gen{
+enum operation {
+  ALLOC, DEALLOC
+};
+
+enum reused {
+  TRUE, FALSE, NA
+};
+
+struct history {
+  enum operation op;
   void *base;
   int size;
-  int generation;
+  int gen;
   enum state s;
+  enum reused r;
 };
 
-struct gen generations[4];
-int count = 0;
+static struct history history[4096];
+static int history_index = 0;
+static int generation = 0;
 
 void *malloc(size_t size){
   void *(*mallocp)(size_t size);
@@ -29,26 +38,45 @@ void *malloc(size_t size){
   if((err = dlerror()) != NULL) exit(EXIT_FAILURE);
 
   char *ptr = mallocp(size);
+  if(ptr == NULL) exit(EXIT_FAILURE);
 
-  if(flag){
-    //Fill the array to keep track of allocations
-    if(count < 4){
-      generations[count].base = ptr;
-      generations[count].generation = 1;
-      generations[count].size = size;
-      generations[count].s = ALLOCATED;
-      count++;
+  if(history_index >= 4096) exit(EXIT_FAILURE);
+
+  history[history_index].op = ALLOC;
+  history[history_index].base = ptr;
+  history[history_index].size = size;
+  history[history_index].gen = generation;
+  history[history_index].s = ALLOCATED;
+  history[history_index].r = FALSE;
+  history_index++;
+
+  for(int i = history_index-2; i >= 0; i--){
+    if (history[i].base == ptr) {
+      history[history_index-1].r = TRUE;
+      history[history_index-1].gen = history[i].gen + 1;
+      break;
     }
-    //Otherwise, its already filled
-    else{
-      
-    }
-  }
-  else{
-    write(STDERR_FILENO, "startup malloc\n", 15);
   }
 
   return ptr;
 
 }
 
+void free(void *ptr){
+  void *(*freep)(void *ptr);
+  char *err;
+
+  freep = dlsym(RTLD_NEXT, "free");
+  if((err = dlerror()) != NULL) exit(EXIT_FAILURE);
+
+  freep(ptr);
+
+  history[history_index].op = DEALLOC;
+  history[history_index].base = ptr;
+  history[history_index].size = 0;
+  history[history_index].gen = generation;
+  history[history_index].s = FREE;
+  history[history_index].r = NA;
+  history_index++;
+
+}

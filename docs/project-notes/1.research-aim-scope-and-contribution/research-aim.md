@@ -1,4 +1,4 @@
-# What is the research aim?
+# Research Aim
 The aim of this thesis is to develop and evaluate a dynamic analysis technique
 for characterizing the heap state associated with known UAF executions. There is
 an emphasis on same address reclemation, replacement object identity, attacker
