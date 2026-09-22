@@ -1,5 +1,5 @@
 # Research Questions
-
+moday 9am
 ## Primary Research Question
 
 To what extent can a glibc aware runtime analysis characterize observed heap
@@ -10,7 +10,15 @@ reclamation and its consequences following use-after-free?
 ### RQ1: How does increasing runtime observation detail affect the correctness and completeness of stale access classification in known UAF execution?
 
 #### General Idea
-We understand that the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that. What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly? We want to be able to identify what claims are 
+Clearly, the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that. What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly?
+
+This might sound like a question with a predetermined answer; yes, clearly more info -> more accuracy. But for the lower levels, at which we arent tracking as much, we may be able to answer questions otherwise thought not possible perhaps because of some aspect of the specific test case that others dont have.
+
+To show this, consider we have two accessed to ther same address:
+1. a stale ptr from expired alloc A accesses the addr
+2. a fresh ptr from replacement alloc B accesses that same addr
+
+If we aren't tracking pointer provenance, both accesses would look identical, and we'd likely report a "unknown" for who currently owns the allocation. But if we consider another hypothetical test case with the same two accesses, its possible that allocator and access info might already be sufficient to determine the current owner of the allocation. Therefore, its incorrect to say pointer provenance PROVES who owns an allocation.
 
 #### Required Observations
 We will require the observations for each specified level we define in `Measurement`. This is because each level observes more than the last one.
@@ -28,7 +36,8 @@ First, we must define our output fields for the classifier. This is simply one s
 
 For these 8 output fields, we need evidence to support the claim made by the classifier. These are the types of evidence:
 1. (AE) Allocator Events: whatever we can gague for calls to `malloc`, `free`, `calloc`, etc.
-2. (MAE) Memory Access Events: These are the actual isntructions that work with memory i.e. `x = *p`, `p->field = v`, `memcpy(dst, src, n)`
+2. (MAE) Memory Access Events: These are the actual isntructions that work with memory i.e.
+    1. `x = *p`, `p->field = v`, `memcpy(dst, src, n)`
 3. (PP) Pointer Provenance: where a pointer a came from and how it moved
 4. We can generate two pieces of additional evidence from the main 3:
     1. (TO) Temporal Ordering: this is simply the order at which "events" occured
@@ -51,6 +60,8 @@ Now, we need to define the levels of observation we want to work with:
     1. We add MAE next because allocator events are the best natural progression. They can tell us of a UAF's existence, but not much else. This gap is filled at the next level
 3. Level C: AE + MAE + PP + Byproducts
     1. Finally, we can understand how each generation and address range changed, and interacted with each other 
+
+Practically, we can conduct 1 execution at level C, and then for each sublevel, remove the information not included, and then see if our model can still classify fields.
 
 #### Ground Truth
 We will have X manually constructed synthetic cases where we know the true allocation, free, reuse, stale pointer, access range, and operation. From there, we can simply compare the output of each level of observation with the ground truth.

@@ -24,24 +24,70 @@ The architecture will be limited to x86-64. The purpose of this thesis is to exp
 The operating system will be Debian 13 `stable` with the v6.12 LTS kernel release. Debian 13 provides a slow changing and reproducible Linux environment, which will work well for our use. The v6.12 LTS release also provides us with little change to our environment, and is currently the release Debian 13 uses
 
 ## 3. Test Corpus
-### Controlled Synthetic Cases
-These are small, manually created programs + UAF inputs where we know exactly what
-will happen, and the relationships between generations/objects.
 
-The reason for including this type of test case is because it will allow us to establish certain ground truths about the type of UAF executed, the consequences of it, and the relationships between objects/generations. These tests won't really be for proving our main hypothesis or research question, as they won't accurately simulate a real world C program.
+### 3.1 Controlled Synthetic Cases
+Small, manually created C programs + UAF triggering inputs representing specific heap state transitions and UAF consquences.
 
-They will be all be compiled with the same Makefile.
+There are two reasons behind synthetic cases:
+1. We control the ground truth. Glibc's allocator has deterministic behavior if allocations/frees are controlled
+    1. Ex. Say we use modern glibc, with default configurations, and perform  `p=malloc(32) -> free(p) -> q=malloc(32)`
+        1. We can say deterministically that the `p` original allocation space will be reclaimed by `q`  because there would be no other allocations to take up space in tcache except that most recently free'd one
+2. General test suites do not take into account the allocator or specific cases
+    1. Given this is a glibc-aware thesis, we can write test cases that explicitly take into account ptmalloc's behavior.
+    2. Ex. If we want a testcase that utilizes fastbin, we can allocate and then free an allocation larger than tcache's supported size or overflows of an uncertain size.
+        1. We can see this in HeapHopper's use of variable sized allocations + only accounting for 1 or 8 byte overwrites.
 
-### Existing Security Examples
-These are selected UAF/heap examples from CTF sources like how2heap/pwn.college and academic sources like the Juliet dataset. These tests are meant to determine whether the approach survives cases that we did not manually design for the analysis. 
+Our test cases will vary in:
+1. Reclaimed vs Unreclaimed allocations
+2. Partial, Full, or No overwrite on stale write
+3. Partial, Full, or no stale read
+4. Pointer arithmetic and provenance, or just straight pointer usage
 
-### Real World Cases
-These are real world vulnerabilities found in FOSS code bases. This will likely
-be the hardest challenge for our framework, and will consist at most 1 or 2
-examples. The results of these tests will give us the most accurate answer to our hypothesis, and research questions.
+### 3.2 Standardized Test Cases
+Cases that were not designed with my tool in mind. The main source here will be the CWE-416 test cases from the Juliet test suite.
+
+The CWE-416 C test cases all follow the general pattern of:
+1. Create a pointer to some data type or struct
+2. May or may not have a conditional data flow in between
+3. Allocate an array of the type/struct, initialize with data, and then free it (if `bad` is set)
+4. Pass the free'd pointer to a custom print function
+
+Worth noting is that there aren't events specific to glibc that cause allocation reuse, or usage of any of the glibc allocator bins. However, there is pointer usage across files, and across functions, which do represent meta-level difference in UAF executions rather than differences in the code itself.
+
+Therefore, at the most basic level, we can say that these test cases are to evaluate the the tool in regard to multi-file executions, pointer provenance, struct handling, and handling conditional code
+
+We will use the following test cases:
+1. `CWE416_Use_After_Free_malloc_free_char_01-18`
+    1. These are the basic versions that contain simple conditional statements before the execution of buggy code
+    2. I feel there is no need to also account for the `int`, `int64`, etc variants as they fundementally do the same thing, just with different types.
+2. `CWE416_Use_After_Free_malloc_free_struct01-18`
+    1. Cover the same thing as the `free_char` cases, but this explicitly goes over struct usage rather than simple data types
+3. `CWE416_Use_After_Free_return_freed_ptr_01-18`
+    1. These cases involve returning a free'd char array pointer
+    2. This is useful for representing inter-function UAF executions
+4. `CWE416_Use_After_Free_malloc_char_63a-b`
+    1. This case involves passing a data pointer from one func to another func in a diff src file
+5. `CWE416_Use_After_Free_malloc_char_64a-b`
+    1. This case involves passing a void pointer from one func to another func in a diff src file
+
+### 3.3 Direct Exploitation Test Cases
+So far, the previous test cases may or may not involve an input that directly transforms a memory corruption primitive into a larger exploit. Therefore, we will also employ test cases from CTF sources like how2heap and pwn.college. 
+
+The test cases will cover the following techniques:
+1. Tcache Poisoning
+2. Fastbin Poisining
+3. House of Lore
+4. House of Storm
+5. House of Water
+6. Fastbin Dup (HeapHopper Variant)
+
+These techniques use some form of UAF, allowing our model to characterize the execution above just a simple bug.
+
+### 3.4 Production Code Benchmark Case
+This will be a single test case from the NIST Software Analysis Tool Exposition VI. Basically, this test case will take real world code from some FOSS code base, and then manually inject bugs for the purpose of testing a static analysis tool. We'll be using testcase 501114. TODO: expand on this.
 
 ## 4. Instrumented Observation
-What we collect during runtime is based on our reserach questions, and the pieces of evidence they require to be solved. 
+Instrumentation will be conducted at the intermediate representation level using LLVM instrumentation and passes. Because one of our core questions is in regard to different levels of observation, we will simply do a single pass of the target program, and then remove information from there. This info will then be passed to our classification algorithm.
 
 If we consider RQ1, we would collect the information in the following methods:
 1. For the operation and range of the stale access, we can get this information straight from the call to malloc/free/etc.
@@ -78,8 +124,6 @@ state of the program. For example:
 
 6) glibc allocator configuration (tuning)
 
-
-
 ### Varied Variables
 
 1) UAF test case
@@ -91,10 +135,25 @@ state of the program. For example:
 4) glibc configuration (while also a controlled variable, we will vary between both versions)
 
 5) instrumented vs native execution (to determine purturbation)
+e tools selectively apply sanitization techniques, possibly\
+combined with exploit mitigation techniques. Code-Pointer\
+Integrity (CPI), for example, only performs bounds checks\
+(a sanitization technique used in many sanitizers) when\
+the program directly or indirectly accesses sensitive code\
+pointers \[14]. We therefore consider CPI an exploit mitigation\
+rather than a sanitizer because CPI only detects a fraction of\
+all bugs that could be detected using bounds checks.\
+Exploit mitigations are meant to be deployed in production,\
+thus put stringent requirements on various design aspects.\
+First, exploit mitigations rarely see real-world adoption if\
+they incur non-negligible run-time overhead \[15]. Sanitizers\
+have less stringent performance requirements because they are\
+only used for testing. Second, false positive detections in an\
+exploit mitigations are unacceptable beca
 
-## 7. Repetition of Experiments
+## 7. Repetitexperiementsion of Experiments
 
-Because certain heap behavior isn't deterministic, we will rely on more than one run for experiements. Rather than recording absolute values, we will store statistical data. For example, rather than storing the absolute address used for some allocation, we will record same address reuse frequency.  
+Because certain heap bbehaviorehavior isn't deterministic, we will rely on more than one run for eexperiementsxperiements. Rather than recording absolute values, we will store statistical data. For example, rather than storing the absolute address used for some allocation, we will record same address reuse frequency.  
 
 ## 8. Evaluation
 
