@@ -3,32 +3,23 @@
 **Venue / Year:** USENIX 2025  
 **Relevance to Thesis:** High
 
----
 
-## 1. Problem
+## 1. Problem and Gap in Existing Work
 
 **What problem is the paper addressing?**
-
 - Lack of formalization in cause, development, and impact of common software errors.
 
 **Why does this problem matter?**
-
 - In order to secure programs, we need to understand what happens to a program state BEFORE, DURING, and AFTER exploitation
 - Also, on the red team side, helps understand how to create better exploits
 
----
-
-## 2. Gap in Existing Work
-
 **What is missing or inadequate in previous approaches?**
-
 - Existing formalizations:
     - Stop working in prescence of mem corruption (i.e. weird machine states)
     - And/or stop once a bug is found (modern exploits chain together vulnerabilities)
 - They are not formal i.e. CWE.
 
 **Why can't existing work solve the problem?**
-
 - Sanitizers: Due to memory modifications such as redzones/quarantine, reports are often incorrect/misleading.
 - Root Cause Diagnostics: these methods rely on reverse execution/tracing back programs steps, so they don't work for sitations lacking direct data flow between corruption site and root cause.
 - Manual Explot Analysis: each exploit is unique, so it isn't scalable.
@@ -37,10 +28,7 @@
 - Real Formalization: existing ones focus on program correctness/abscence of vulns, so fail (in terms of analyzing the state of a program AFTER corruption) when a weird machine state is introduced
 
 **Closest prior work:**
-
 - There is no closest prior work. Lancel explicitly states this.
-
----
 
 ## 3. Research Goal / Questions
 
@@ -111,130 +99,23 @@
 They developed a tool called EPF, which excetends Lancet to define common exploit primtives and techniques. The idea is that an exploit is escalation from an initial corruption into stronger primitives, so EPF fingerprints those transitions. 
 
 
----
+## Evaluation
+Test case construction:
+1. Pull issues of popular GitHub repos
+2. Vulnerabilities in Nginx CP released by DARPA
+3. Toy programs demonstrating heap exploitation techniques from how2heap
+4. CTF challenge programs with public solutions
+5. Real life exploits
+6. Reproducible memory corruption cases from REPT
+7. Representative test cases from JULIET test suite covering memory corrupt and non memory corrupt CWEs
 
-## 6. Method / System Design
+For sources 1 and 2, manual debugging was used to obtain a ground truth. 
 
-**What information does the system observe or collect?**
-
-- 
-
-**Analysis / instrumentation techniques:**
-
-- 
-
-**Important algorithms or data structures:**
-
-- 
-
-**Important assumptions:**
-
-- 
-
-**Scope:**
-
-- 
-
----
-
-## 7. Experimental Design
-
-**What claims are the experiments intended to test?**
-
-- How Efficiently can Lancet and its two tools dissect crashes and exploits?
-- Can FCS effectively annotate the cause + progression of errors, and can EPF illustrate primitive transitions in explopits?
-- Did FCS contribute to patch synthesis in the AIxCC semi finals?
-
-**Corpus / benchmarks / programs:**
-
-- Internal dataset consisting of pull issues of popular FOSS
-- Vulns in NGinx CP
-- Programs meant to show off techniques from sources like how2heap
-- CTF challenge programs
-- Real world exploits
-- Reproducible mem corrupt cases from REPT
-- Representative cases from JULIET
-- NOTE: for vulns from 1 and 2, they manually debugged them to create a ground truth to then evaluate their tools on.
-
-**Independent variables / configurations varied:**
-
-- 
-
-**What is held constant?**
-
-- The hardware used to run the tools
-
-**Baselines / comparison systems:**
-
-- 
-
-**Metrics:**
-
-- 
-
-**Number of runs / repetitions:**
-
-- 
-
-**Environment:**
-
-- Architecture:
-- OS:
-- Compiler:
-- Relevant libraries / versions:
-- Hardware:
-- Other:
-
-
----
-## 7.5 House of Einherjar Fingerprinting Case Study
-
-This is the exploit where we overwrite the PREV_INUSE bit of the next chunk such that the allocator believes the chunk before it is free. Also, the attacker sets a fake prev_size field so thwen the corrupted chunk is later freed, glibc performs backwards consolidation to a fake chunk chosen by the attacker.
-
-This is how EPF handles it:
-1. First, EPF locates the initial off-by-one and notes that the cell owner of the overwritten mem is  `allocator`. So, EPF correctly reports a corruption of heap metadata.
-2. Next, EPF accurately reports a mem overlap when the malicious malloc() (after the initial corruption) is executed.
- 
----
-## 8. Results
-
-### Main Findings
-
-1. 
-2. 
-3. 
-
-### Important Numbers
-
-- 
-- 
-
-### Claim → Evidence
-
-| Claim | Experiment / Evidence | Result |
-|---|---|---|
-| | | |
-| | | |
-| | | |
-
----
-
-## 9. Limitations / Threats to Validity
-
-**Limitations acknowledged by the authors:**
-
-- 
-
-**Things the approach cannot handle:**
-
-- 
-
-**Assumptions that may limit generalization:**
-
-- 
-
-**Potential sources of measurement error / false positives / false negatives:**
-
-- 
-
----
+Explicit Evaluation Questions:
+1. How efficient can Lancet and its two tools disset crashes and exploits?
+    1. They track analysis times for both tools in terms of seconds to instructions 
+2. Can FCS effectively annotate the cause and progression of errors and can EPF illustrate primitive transitions in exploits?
+    1. Evaluation Criteria: correctness and utility of info in reports.
+        1. Essentially, ran the same test cases from evaluation question 1, along with also testing then with ASan, and compared how quickly the bug was detected, and 
+    2. FCS was able to report NULL ptr deref + untrusted pointer deref because accessed mem cell is not defined with cell owner
+3. Did FCS contribute to patch synthesis in competition?
