@@ -85,4 +85,43 @@ Instrumentation can be done at four levels:
     2. Sanitizers use it for intercepting calls to malloc/free
     3. It has the same benefits of binary level, but only works for inter-library calls. Calls of two funcs within the same library dont work.
 
+For our thesis, IR level works best since we are the assumption that source code is available, so no need for binary level. Additionally, library interposition will also be used as one of the listed use cases applies to us closely (monitoring malloc/free).
+
 ## Metadata Management
+1. Object Metadata
+    1. The sanitizer stores metadata for each allocated memory object.
+    2. This includes obj size, type, alloc state, and alloc identifier.
+    3. There are four ways to actually store this obj metadata:
+        1. Embedded
+            1. When an obj is created, increase its size enough to fit the metadata as part of the obj.
+            2. Good for compatability, since the metadata is stored on either end of the allocation, a third party library wouldn't know about it.
+        2. Direct Mapped Shadow
+            1. Map every n-sized block of real proc mem to an m-sized block of metadata via `metadata_addr = shadow_base + m * (block_addr / n)`.
+            2. For example, ASan maps 8 real bytes to 1 byte of metadata.
+            3. Easy to implement, but memory inefficient as it has to account for each possible virtual address.
+            4. Technically, this is storing metadata per-byte
+        3. Multi Level Shadow
+            1. Essentially the idea of paging but for metadata stores. Rather than direct mapped, where its one contigous block, we maintain fragmented directory tables.
+            2. DTs can either point to metadata tables, or other DTs.
+            3. Each DT is correlated with only a specific chunk of virtual memory.
+            4. Most tools that do per-object metadata actually use this since objects aren't a static size. They vary
+                1. So, a variable compression ratio multi level shadow mapping scheme is used, where directory table maps variable sized objs to constant sized metadata.
+            5. The obvious con is that accessing metadata once can require multiple memory accesses through DTs
+        4. Custom Datastructure
+            1. The idea here is to use a data structure that has support for concurrent accesses.
+            2. If it does not, you need to explicitly use mutexes for multithreaded programs
+2. Pointer Metadata:
+    1. Here, we store the metatadata about the pointers themselves
+    2. There are three main methods for implementation
+        1. Fat Pointers
+            1. Entirely replace the pointer structure for a fat pointer struct, which stores the original pointer value, base address for intended referent, and size of the referent.
+            2. Fat Ptrs are actually alot more efficient than normal pointers, since all the metadata is already at the pointer; no need to refer to other metadata.
+            3. The big con is that they aren't very compatible, and requires heavy instrumentation
+        2. Tagged Pointers
+            1. Replace the default ptr with tagged pointers, which embed metadata into the pointer itself,without changing its size.
+            2. They require alot less instrumentation, but need to be translated to be used as normal pointers.
+        3. Disjoint Metadata
+            1. Simply store ptr metadata elsewhere via multi level lookups.
+    3. Static Metadata
+        1. This is metadata that is inserted beforehand and used as refrence during execution.
+        2. For example, if a sanitizer solely checks for correct type usage, it can import a type table to refer to during runtime checks.

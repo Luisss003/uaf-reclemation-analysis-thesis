@@ -2,8 +2,7 @@
 moday 9am
 ## Primary Research Question
 
-To what extent can a glibc aware runtime analysis characterize observed heap
-reclamation and its consequences following use-after-free?
+To what extent can a glibc aware runtime analysis characterize observed heap reclamation and its consequences following use-after-free?
 
 ## Secondary Research Questions
  

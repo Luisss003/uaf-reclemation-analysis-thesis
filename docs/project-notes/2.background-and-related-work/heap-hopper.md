@@ -52,3 +52,6 @@ Now given this, they ran their executions, and created their results table:
 
 
 M M F UAF M F 
+
+next step
+settle down formlization and what vuln/tpyes of UAF to handle I can handle before alg + implementation. look at lancet to see what bugs havent been formalized.

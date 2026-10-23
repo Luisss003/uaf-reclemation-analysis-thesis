@@ -1,4 +1,4 @@
-# Terminology
+# 1.4 Terminology
 
  - Heap Object: A single unique live allocation created by something like malloc. It contains a lifetime and range.
  
