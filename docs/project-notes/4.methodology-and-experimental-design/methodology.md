@@ -269,9 +269,15 @@ Given we track attacker derived data and/or program data reused by the attacker,
 ## 5. Instrumented Observation
 Instrumentation will be conducted at the intermediate representation level using LLVM instrumentation and passes. Because one of our core questions is in regard to different levels of observation, we will simply do a single pass of the target program, and then remove information from there. This info will then be passed to our classification algorithm.
 
-If we consider RQ1, we would collect the information in the following methods:
-1. For the operation and range of the stale access, we can get this information straight from the call to malloc/free/etc.
-    1. We need to consider 
+The overall implementation has three aspects to it:
+1. LLVM instrumentation level
+    1. Here, we write our passes, and then insert them into the target binary. This simply dictates what to observe
+    2. I.e. LLVM looks for calls to `malloc`, and inserts calls to functions we define, called passes.
+    3. Note: LLVM only does work once. that work is inserting calls to our runtime functions.
+2. Runtime Level
+    1. This is a seperate program compiled with the LLVM instrumented binary, but not written with LLVM.
+    2. As the instrumented program executes, it will execute those LLVM instrumented calls to the runtime level functions.
+    3. It actually maintains shadow memory, keeps track of information, etc.
 
 ## 6. Runtime Analysis and Classification
 
