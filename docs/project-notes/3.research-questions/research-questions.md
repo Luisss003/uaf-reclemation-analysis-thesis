@@ -1,23 +1,22 @@
 # Research Questions
-moday 9am
 ## Primary Research Question
 
-To what extent can a glibc aware runtime analysis characterize observed heap reclamation and its consequences following use-after-free?
+To what extent can a glibc aware runtime analysis characterize observed heap state, and its underlying chunk state transitions leading to, and after a use-after-free?
 
 ## Secondary Research Questions
  
 ### RQ1: How does increasing runtime observation detail affect the correctness and completeness of stale access classification in known UAF execution?
 
 #### General Idea
-Clearly, the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that. What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly?
+Clearly, the more data we observe, the more correct and complete the classification will be of a UAF execution. So, we want to know the "why" behind that.  What detriment does the lack of some info have that can cause the classification to be unsure, or even incorrect? And by adding that info, why does the classifier now have the ability to answer the question more correctly?
 
-This might sound like a question with a predetermined answer; yes, clearly more info -> more accuracy. But for the lower levels, at which we arent tracking as much, we may be able to answer questions otherwise thought not possible perhaps because of some aspect of the specific test case that others dont have.
+This might sound like a question with a predetermined answer; yes, clearly more info -> more accuracy. But for the lower levels, at which we arent tracking as much, we may be able to answer questions otherwise thought not possible particularly because we are tracking the state transitions found in the underlying glibc chunk management system. 
 
-To show this, consider we have two accessed to ther same address:
-1. a stale ptr from expired alloc A accesses the addr
-2. a fresh ptr from replacement alloc B accesses that same addr
+Consider the `House of Botcake` technique:
+1. While this technique doesn't rely on UAF, instead a double free, a true analysis of it cannot rely solely on logical allocation events and relationships
+2. Fundementally, it requires tracking the broken state transitions in the underlying glibc bins given one of its main objectives is to create a chunk that is both handled by the unsorted bin and tcache, which is later leverated to create an overlapping chunk.
+3. In a model that assumes a general allocator, the underlying bins aren't accounted for, so a true analysis cannot be conducted solely on logical allocator data.
 
-If we aren't tracking pointer provenance, both accesses would look identical, and we'd likely report a "unknown" for who currently owns the allocation. But if we consider another hypothetical test case with the same two accesses, its possible that allocator and access info might already be sufficient to determine the current owner of the allocation. Therefore, its incorrect to say pointer provenance PROVES who owns an allocation.
 
 #### Required Observations
 We will require the observations for each specified level we define in `Measurement`. This is because each level observes more than the last one.
@@ -62,19 +61,23 @@ Now, we need to define the levels of observation we want to work with:
 
 Practically, we can conduct 1 execution at level C, and then for each sublevel, remove the information not included, and then see if our model can still classify fields.
 
+NOTE: I GO OVER THE UNDERLYING BIN OBSERVATIONS IN THE METHODOLOGY SECTION OF THE REPORT, SO REFER THERE. ABOVE IS ONLY THE ALLOCATOR METRICS TRACKED.
+
 #### Ground Truth
 We will have X manually constructed synthetic cases where we know the true allocation, free, reuse, stale pointer, access range, and operation. From there, we can simply compare the output of each level of observation with the ground truth.
 
 #### Reported Result
 For our three levels, we must mark `known`, `unknown`, `wrong` for the 8 fields they output. From here, we need to analyze and write down what each previous level was missing, and why it led to a unknown or wrong output.
 
-### RQ2: When a stale read targets reclaimed heap memory, how much of the stale read range overlaps the STDIN derived data in the replacement object?
+### RQ2: When a stale access is performed through a stale pointer, what direct impact does that access have on the previously used heap range, whether that range has been reclaimed or not?
 
 #### General Idea
-First, let's define attacker derived data as coming strictly through STDIN. So, lets say a stale read occured. Now how much of the attacker derived bytes were actually touched through that read? And for partial and full touches of those bytes, what are some possible reasons why some failed/partially failed/succeded? We don't care about how those read bytes later influence exploitation, just the access itself.
+Given a stale read or write pointer, the attacker has one of two different capabilities that lead to the same result; a memory corruption. Given that the attacker can now overwrite memory, or read unintended or controlled contents, we need to actually measure and categorize the access itself. Some of the possible measurements to track: how much of the attacker derived bytes were actually touched through that read? For partial and full touches of those bytes, what are some possible reasons why some failed/partially failed/succeded? For example, a read of 8 bytes is likely because the instruction of the stale read was a function call via a function pointer.
+
+We don't care about how those read bytes later influence exploitation, just the access itself.
  
 #### Required Observations
-Stale read range and replacement object range, and STDIN derived byte ranges inside the replacement object.
+Stale read and write range and replacement object range, and STDIN derived byte ranges inside the replacement object if a stale write occured.
 
 #### Measurements
 For one stale read to a replacement object, we need 3 ranges:
@@ -106,11 +109,10 @@ TBD
 #### Reported Result
 For each test case, we report whether the stale read accessed attacker derived data. Then we aggregate these results, and measure how often a stale read accessed STDIN data as well as the simple conditions that seemingly led to a successful read of attacker derived data.
 
-### STRETCH RQ: What observable runtime effects follow from stale reads or writes to reclaimed memory?
-Since this is much more complex, we deal with it as a stretch goal.
+### R3: What observable runtime effects follow from stale reads or writes to reclaimed memory?
 
 #### General Idea
-So we've measured different components at runtime, such as the type of UAF performed, reuse of chunks, etc, but now, we want to quantify the effects of the stale access.:
+So we've measured different components at runtime, but now, we want to quantify the effects of the stale access:
 1. For reads, the analysis records whether bytes from the replacement object were loaded and whether the loaded value is later observed being used.
 2. For writes, the analysis records whether bytes belonging to the replacement object were modified and whether those modified bytes are later observed being used. The goals arent proving exploitability or program semantics, but rather just making concrete program observations after the fact.
 

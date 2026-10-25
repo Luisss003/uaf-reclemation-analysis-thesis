@@ -1,7 +1,6 @@
 # 1.3 Contributions
 
 1. A runtime characterization model for post UAF executions
-    1. This model will connect a stale pointer's original allocation identity, current byte level owners of its access range, and any replacement allocations occupying that range.
 
 2. An evidence based classification method
     1. Rules for classifying reclamation and input derived overlap from recorded events, including allocation, accesses, and pointer provenance, and input provenance evidence, including explicit unknown results when the evidence is insufficient.

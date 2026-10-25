@@ -1,12 +1,10 @@
 # Methodology
 
 ## 1. Research Design
-The research here is primarily an experimental systems security study using
-dynamic program analysis. We are observing concrete executions rather than
+The research here is primarily an experimental systems security study using dynamic program analysis. We are observing concrete executions rather than
 statically considering every possible program behavior.
 
-We can define our unit to be one execution of a C program containing a
-known heap UAF, using an input that exploits that vulnerability.
+We can define our unit to be one execution of a C program containing a known heap UAF that is used either naturally or via user input that exploits that vulnerability.
 
 The research itself can be broken into the following steps:
 1) Given a program + a known UAF triggering input
@@ -26,12 +24,12 @@ The operating system will be Debian 13 `stable` with the v6.12 LTS kernel releas
 ## 3. Test Corpus
 
 ### 3.1 Controlled Synthetic Cases
-Small, manually created C programs + UAF triggering inputs representing specific heap state transitions and UAF consquences.
+Small, manually created C programs that either naturally contain a UAF or enable user input to cause a UAF bug.
 
 There are two reasons behind synthetic cases:
 1. We control the ground truth. Glibc's allocator has deterministic behavior if allocations/frees are controlled
     1. Ex. Say we use modern glibc, with default configurations, and perform  `p=malloc(32) -> free(p) -> q=malloc(32)`
-        1. We can say deterministically that the `p` original allocation space will be reclaimed by `q`  because there would be no other allocations to take up space in tcache except that most recently free'd one
+        1. We can say deterministically that the `p` original allocation space will be reclaimed by `q`  via tcache  because there would be no other allocations to take up space in tcache except that most recently free'd one, and the size of the allocation fits within tcache's range.
 2. General test suites do not take into account the allocator or specific cases
     1. Given this is a glibc-aware thesis, we can write test cases that explicitly take into account ptmalloc's behavior.
     2. Ex. If we want a testcase that utilizes fastbin, we can allocate and then free an allocation larger than tcache's supported size or overflows of an uncertain size.
@@ -70,16 +68,14 @@ We will use the following test cases:
 5. `CWE416_Use_After_Free_malloc_char_64a-b`
     1. This case involves passing a void pointer from one func to another func in a diff src file
 
-### 3.3 Direct Exploitation Test Cases
-So far, the previous test cases may or may not involve an input that directly transforms a memory corruption primitive into a larger exploit. Therefore, we will also employ test cases from CTF sources like how2heap and pwn.college. 
+### 3.3 Direlct Exploitation Test Cases
+So far, the previous test cases may or may not involve an input that directly transforms a memory corruption primitive into a larger primitive. Therefore, we will also employ test cases from CTF sources like how2heap and pwn.college. 
 
 The test cases will cover the following techniques:
 1. Tcache Poisoning
-2. Fastbin Poisining
-3. House of Lore
-4. House of Storm
-5. House of Water
-6. Fastbin Dup (HeapHopper Variant)
+2. House of Lore
+3. House of Storm
+4. House of Water
 
 These techniques use some form of UAF, allowing our model to characterize the execution above just a simple bug.
 
@@ -255,7 +251,21 @@ Given the defines ranges, we now need to consider how two ranges can relate at a
 4. One contains another
     1. Given range A and B, if we assume range A is the larger one, all bytes in range B are also in the range of A.
     2. More formally, A.start <= B.start AND B.end <= A.end
-5. 
+
+### Immediate Effect
+Given we track attacker derived data and/or program data reused by the attacker, we need to essentially perform taint analysis. This means, if the attacker used a stale pointer, we need to track what memory addresses that data.We can define effect as:
+1. `origin`
+    1. Where did the data come from?
+    2. On a stale read, this data may have came from a replacement allocation that reused the same address.
+    3. On a stale write, this data may have come from existing memory or passed through a STDIN-read function.
+2. `destination`
+    1. Now, what location was directly affected by the access?
+    2. On a read, this means an inintended value was accessed, and then stored somewhere where it does not belong
+    3. On a write, memory was overwritten with an unintended value
+3. `usage`
+    1. Refers to the immediate use of the `dest`
+    2. This could be through calling a function, using the value in a conditional, or propogating it via memory copies or movement.
+
 ## 5. Instrumented Observation
 Instrumentation will be conducted at the intermediate representation level using LLVM instrumentation and passes. Because one of our core questions is in regard to different levels of observation, we will simply do a single pass of the target program, and then remove information from there. This info will then be passed to our classification algorithm.
 
@@ -263,63 +273,31 @@ If we consider RQ1, we would collect the information in the following methods:
 1. For the operation and range of the stale access, we can get this information straight from the call to malloc/free/etc.
     1. We need to consider 
 
-## 6. Runtime Classification
+## 6. Runtime Analysis and Classification
 
-After the execution, we need to then take our observations, and classify what
-occured as a result of the UAF input. This allows us to make claims about the
-state of the program. For example:
+After we've executed the program, we need to take the measurements we've made, and run them through two algorithms in real time:
+1. Analysis Algorithm
+2. Classification Algorithm
 
-1) Was the original allocation alive?
-   1) If so, not a stale generation. 
-   2) Otherwise, continue
-2. Is the addr curr unallocated?
-   1. If so, a stale access to unreclaimed memory
-   2. If not, then a stale access to reclaimed memory 
-3. What bytes of the stale access overlap the replacement obj?
-   1. This could be computed as $A\cap P$ where A = stale access range, and P = replacement allocation range
+I go over these in the next section.
 
 ## 7. Experiment Variables
 
 ### Controled Variables
 
-1) Architecture: x86-64
-
-2) OS: Debian 13
-
-3) Compiler: glibc 2.31 and 2.41
-
-4) Program Input (we assume an existing UAF input)
-
-5) Instrumentation configuration
-
-6) glibc allocator configuration (tuning)
+1. Architecture: x86-6
+2. OS: Debian 13
+3. Glibc Version: 2.42
+4. Program Input (we assume an existing UAF input)
+5. Levels of Observation
+6. glibc allocator configuration (tuning)
 
 ### Varied Variables
-
-1) UAF test case
-
-2) Replacement allocation behavior
-
-3) Attacker data placement
-
-4) glibc configuration (while also a controlled variable, we will vary between both versions)
-
-5) instrumented vs native execution (to determine purturbation)
-e tools selectively apply sanitization techniques, possibly\
-combined with exploit mitigation techniques. Code-Pointer\
-Integrity (CPI), for example, only performs bounds checks\
-(a sanitization technique used in many sanitizers) when\
-the program directly or indirectly accesses sensitive code\
-pointers \[14]. We therefore consider CPI an exploit mitigation\
-rather than a sanitizer because CPI only detects a fraction of\
-all bugs that could be detected using bounds checks.\
-Exploit mitigations are meant to be deployed in production,\
-thus put stringent requirements on various design aspects.\
-First, exploit mitigations rarely see real-world adoption if\
-they incur non-negligible run-time overhead \[15]. Sanitizers\
-have less stringent performance requirements because they are\
-only used for testing. Second, false positive detections in an\
-exploit mitigations are unacceptable beca
+1. UAF test case
+2. Replacement allocation behavior
+3. Attacker data placement
+4. glibc configuration (while also a controlled variable, we will vary between both versions)
+5. instrumented vs native execution (to determine purturbation)
 
 ## 8. Repetitexperiementsion of Experiments
 
